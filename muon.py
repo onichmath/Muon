@@ -27,7 +27,8 @@ def orthogonalize(G, method="ns", steps=10, top_percent=0.1):
 
     X = G.bfloat16() if method.startswith("ns") else G
     X = _maybe_transpose(X)
-    X = _normalize_spectral(X)
+    if method != "svd":
+        X = _normalize_spectral(X)
 
     if method.startswith("ns"):
         X = _newton_schulz(X, steps).float()
