@@ -32,8 +32,8 @@ def orthogonalize(G, method="ns", steps=5, top_percent=0.1):
     if method.startswith("ns"):
         X = _newton_schulz(X, steps).float()
 
-    # Spectral filtering by SVD
-    if method in ["svd", "ns", "ns_unif", "topk", "spectralnorm"]:
+    # Spectral filtering by SVD - skip if keeping all parameters (top_percent = 1.0)
+    if method in ["svd", "ns", "ns_unif", "topk", "spectralnorm"] and top_percent < 1.0:
         U, S, Vh = torch.linalg.svd(X, full_matrices=False)
 
         if top_percent == 0.0:
