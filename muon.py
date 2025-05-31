@@ -20,7 +20,7 @@ def _maybe_transpose(X):
     return X.mT if X.size(-2) > X.size(-1) else X
 
 
-def orthogonalize(G, method="ns", steps=5, top_percent=0.1):
+def orthogonalize(G, method="ns", steps=10, top_percent=0.1):
     assert G.ndim >= 2
     orig_shape = G.shape
     dtype = G.dtype
@@ -52,7 +52,7 @@ def orthogonalize(G, method="ns", steps=5, top_percent=0.1):
 
 
 def orthogonal_update(
-    grad, momentum, beta, method, steps=5, top_percent=0.1, nesterov=True
+    grad, momentum, beta, method, steps=10, top_percent=0.1, nesterov=True
 ):
     momentum.lerp_(grad, 1 - beta)
     update = grad.lerp(momentum, beta) if nesterov else momentum
@@ -79,7 +79,7 @@ class UnifiedOptimizer(torch.optim.Optimizer):
                 group.setdefault("lr", 0.02)
                 group.setdefault("momentum", 0.95)
                 group.setdefault("weight_decay", 0.0)
-                group.setdefault("ns_steps", 5)
+                group.setdefault("ns_steps", 10)
                 group.setdefault("method", "ns")
                 group.setdefault("top_percent", 1.0)
             else:
