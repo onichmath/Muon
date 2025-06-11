@@ -19,22 +19,94 @@ def _newton_schulz(X, steps):
 def _maybe_transpose(X):
     return X.mT if X.size(-2) > X.size(-1) else X
 
+def _power_iteration_svd(X, k, num_iter=3):
+    """Fast approximate SVD using power iteration for top k components."""
+    m, n = X.shape
 
-def orthogonalize(G, method="ns", steps=5, top_percent=0.1):
+    Q = torch.randn(n, k, device=X.device, dtype=X.dtype)
+    Q, _ = torch.linalg.qr(Q)
+
+    for _ in range(num_iter):
+        Q = X @ Q
+        Q, _ = torch.linalg.qr(Q)
+        Q = X.T @ Q
+        Q, _ = torch.linalg.qr(Q)
+
+    Y = X @ Q
+    Y, _ = torch.linalg.qr(Y)
+
+    XTY = X.T @ Y
+    S = torch.norm(XTY, dim=0)
+
+    V = XTY / (S.unsqueeze(0) + 1e-10)
+
+    U = Y
+    Vh = V.T
+
+    return U, S, Vh
+
+
+def _spectral_norm_approximation(X, num_iter=1):
+    """Fast spectral norm approximation using power iteration."""
+    if X.dim() == 2:
+        u = torch.randn(X.size(0), 1, device=X.device, dtype=X.dtype)
+        for _ in range(num_iter):
+            v = X.T @ u
+            v = v / v.norm()
+            u = X @ v
+            u = u / u.norm()
+        sigma = (u.T @ X @ v).item()
+        return sigma
+    else:
+        return X.norm()
+
+
+def _fast_spectral_filter(X, top_percent, method="power_iter"):
+    """Fast spectral filtering using approximation methods."""
+    m, n = X.shape
+
+    if top_percent == 0.0:
+        u = torch.randn(m, 1, device=X.device, dtype=X.dtype)
+        u = u / u.norm()
+
+        for _ in range(3):
+            v = X.T @ u
+            v = v / v.norm()
+            u = X @ v
+            u = u / u.norm()
+
+        sigma = torch.norm(X.T @ u)
+        return sigma * torch.outer(u.squeeze(), v.squeeze())
+
+    k = max(1, int(top_percent * min(m, n)))
+
+    if k <= 3 or k >= min(m, n) * 0.9:
+        U, S, Vh = torch.linalg.svd(X, full_matrices=False)
+    else:
+        U, S, Vh = _power_iteration_svd(X, k)
+
+    if k <= len(S):
+        return U[:, :k] @ torch.diag(S[:k]) @ Vh[:k, :]
+    else:
+        return U @ torch.diag(S) @ Vh
+
+
+def orthogonalize(G, method="ns", steps=10, top_percent=0.1):
     assert G.ndim >= 2
     orig_shape = G.shape
     dtype = G.dtype
 
     X = G.bfloat16() if method.startswith("ns") else G
     X = _maybe_transpose(X)
-    X = _normalize_spectral(X)
+    if method != "svd":
+        X = _normalize_spectral(X)
 
     if method.startswith("ns"):
         X = _newton_schulz(X, steps).float()
 
-    # Spectral filtering by SVD
-    if method in ["svd", "ns", "ns_unif", "topk", "spectralnorm"]:
+    if method in ["svd", "ns", "ns_unif", "topk", "spectralnorm"] and top_percent < 1.0:
         U, S, Vh = torch.linalg.svd(X, full_matrices=False)
+
 
         if top_percent == 0.0:
             k = 1
@@ -47,6 +119,28 @@ def orthogonalize(G, method="ns", steps=5, top_percent=0.1):
         else:
             S_trunc[..., :k] = S[..., :k]
         X = U @ torch.diag_embed(S_trunc) @ Vh
+
+    elif (
+        method
+        in ["svd_fast", "ns_fast", "ns_unif_fast", "topk_fast", "spectralnorm_fast"]
+        and top_percent < 1.0
+    ):
+        if X.numel() > 10000:
+            X = _fast_spectral_filter(X, top_percent, method="power_iter")
+        else:
+            U, S, Vh = torch.linalg.svd(X, full_matrices=False)
+            if top_percent == 0.0:
+                k = 1
+            else:
+                total_singular = S.size(-1)
+                k = max(1, math.ceil(top_percent * total_singular))
+            S_trunc = torch.zeros_like(S)
+            if method == "ns_unif_fast":
+                S_trunc[..., :k] = 1.0
+            else:
+                S_trunc[..., :k] = S[..., :k]
+            X = U @ torch.diag_embed(S_trunc) @ Vh
+
 
     return _maybe_transpose(X).view(orig_shape).to(dtype)
 
