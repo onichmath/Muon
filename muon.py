@@ -19,7 +19,6 @@ def _newton_schulz(X, steps):
 def _maybe_transpose(X):
     return X.mT if X.size(-2) > X.size(-1) else X
 
-
 def _power_iteration_svd(X, k, num_iter=3):
     """Fast approximate SVD using power iteration for top k components."""
     m, n = X.shape
@@ -108,6 +107,7 @@ def orthogonalize(G, method="ns", steps=10, top_percent=0.1):
     if method in ["svd", "ns", "ns_unif", "topk", "spectralnorm"] and top_percent < 1.0:
         U, S, Vh = torch.linalg.svd(X, full_matrices=False)
 
+
         if top_percent == 0.0:
             k = 1
         else:
@@ -141,11 +141,12 @@ def orthogonalize(G, method="ns", steps=10, top_percent=0.1):
                 S_trunc[..., :k] = S[..., :k]
             X = U @ torch.diag_embed(S_trunc) @ Vh
 
+
     return _maybe_transpose(X).view(orig_shape).to(dtype)
 
 
 def orthogonal_update(
-    grad, momentum, beta, method, steps=10, top_percent=0.1, nesterov=True
+    grad, momentum, beta, method, steps=5, top_percent=0.1, nesterov=True
 ):
     momentum.lerp_(grad, 1 - beta)
     update = grad.lerp(momentum, beta) if nesterov else momentum
@@ -172,7 +173,7 @@ class UnifiedOptimizer(torch.optim.Optimizer):
                 group.setdefault("lr", 0.02)
                 group.setdefault("momentum", 0.95)
                 group.setdefault("weight_decay", 0.0)
-                group.setdefault("ns_steps", 10)
+                group.setdefault("ns_steps", 5)
                 group.setdefault("method", "ns")
                 group.setdefault("top_percent", 1.0)
             else:
